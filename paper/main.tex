@@ -1,0 +1,143 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage[margin=2.5cm]{geometry}
+
+\title{Evaluating Feature Attribution Stability Using SHAP Across Multiple Machine Learning Models}
+
+\author{
+  Author One\thanks{Corresponding author: email@example.com} \\
+  Department, Institution \\
+  City, Country
+}
+
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We train three tree-based models (Random Forest, Gradient Boosting, and XGBoost) on the same tabular datasets and compare their SHAP-based global feature importance. Using three public datasets---California Housing (regression), Adult income (classification), and Titanic (classification)---we compute pairwise Spearman rank correlation of feature importance and top-$k$ overlap (Jaccard index). We find that SHAP-derived importance rankings are often highly correlated across models (e.g., Spearman $r \approx 0.88$--$0.98$) but can disagree on the identity or order of top features. We report test-set model performance (RMSE/$R^2$ for regression, accuracy/AUC for classification) and conclude that practitioners should not treat a single model's SHAP explanation as unique; checking consistency across models or reporting which model was explained is recommended.
+\end{abstract}
+
+\noindent\textbf{Keywords:} SHAP; feature attribution; explainable AI; model comparison; stability; tree ensembles.
+
+\section{Introduction}
+\label{sec:intro}
+
+SHAP (SHapley Additive exPlanations) is widely used to explain predictions of machine learning models by attributing importance to each input feature. When multiple models achieve similar predictive performance on the same task, a natural question is whether their explanations agree: do they identify the same features as important, and in the same order?
+
+Prior work has shown that feature attributions can vary with model choice and that different models with comparable accuracy may yield different local explanations. We quantify this phenomenon for \emph{global} SHAP-based feature importance across three popular tree-based models---Random Forest, Gradient Boosting, and XGBoost---on three public datasets. We measure agreement via pairwise Spearman rank correlation and top-$k$ feature set overlap (Jaccard index), and we report model performance metrics so that explanation stability can be interpreted alongside predictive performance.
+
+\section{Related Work}
+\label{sec:related}
+
+Consistency of SHAP within a single model (e.g., tree ensembles) is well studied. The Rashomon set framework addresses explanation variability across models that perform equally well: different models in the set can yield different attributions for the same prediction. SHAP rankings have also been shown to be sensitive to architecture and random initialization in deep learning. We focus on tabular data and tree explainers, and provide a systematic empirical comparison with explicit metrics (Spearman, top-$k$ overlap) that can be replicated.
+
+\section{Methods}
+\label{sec:methods}
+
+\subsection{Datasets and Labels}
+We use three public datasets:
+\begin{itemize}
+  \item \textbf{California Housing}: regression; target is median house value (MedHouseVal). Source: sklearn \texttt{fetch\_california\_housing}.
+  \item \textbf{Adult}: classification; target is income $>50$K (binary). Source: OpenML adult, version 2. Numeric features only.
+  \item \textbf{Titanic}: classification; target is survival (binary). Source: OpenML titanic, version 1.
+\end{itemize}
+Data are split 80\%/20\% train/test with a fixed random seed (42) for reproducibility.
+
+\subsection{Models}
+For each dataset we train three models with default or standard settings ($n\_estimators=100$, fixed \texttt{random\_state}=42):
+\begin{itemize}
+  \item Random Forest (scikit-learn)
+  \item Gradient Boosting (scikit-learn)
+  \item XGBoost
+\end{itemize}
+Regression models are used for California Housing; classifiers for Adult and Titanic.
+
+\subsection{SHAP and Global Importance}
+We use TreeExplainer (SHAP) with a small background set (100 samples from the training set) and compute SHAP values for a subsample of the test set (200 samples by default). For each model we define \emph{global} feature importance as the mean absolute SHAP value per feature over this subsample. Features are then ranked by this importance (rank 1 = most important).
+
+\subsection{Stability Metrics}
+\begin{itemize}
+  \item \textbf{Spearman rank correlation}: pairwise, between the feature rankings of each pair of models. High $r$ indicates similar ordering of importance.
+  \item \textbf{Top-$k$ overlap (Jaccard)}: for each pair of models, the Jaccard index of the sets of top-$k$ feature indices ($k=5$). Equal to 1 if the same $k$ features are selected (order ignored).
+\end{itemize}
+
+\subsection{Model Performance}
+We report test-set metrics to contextualize explanation comparison: RMSE and $R^2$ for regression; accuracy and AUC for classification.
+
+\section{Results}
+\label{sec:results}
+
+Table~\ref{tab:perf} summarizes model performance. Table~\ref{tab:spearman} and the top-$k$ overlap results (not shown in full here) indicate that SHAP rankings are often highly correlated (e.g., Spearman $r$ between 0.88 and 0.98) but that the top-5 feature set or their order can differ across models (e.g., XGBoost vs.\ others on California Housing).
+
+\begin{table}[htbp]
+  \centering
+  \caption{Test-set performance (single run, seed 42).}
+  \label{tab:perf}
+  \begin{tabular}{llll}
+    \toprule
+    Dataset    & Model  & Metric 1   & Metric 2   \\
+    \midrule
+    California & RF     & RMSE 0.505 & $R^2$ 0.805 \\
+               & GBM    & RMSE 0.542 & $R^2$ 0.776 \\
+               & XGB    & RMSE 0.474 & $R^2$ 0.829 \\
+    \midrule
+    Adult       & RF     & Acc.\ 0.809 & AUC 0.827 \\
+               & GBM    & Acc.\ 0.844 & AUC 0.868 \\
+               & XGB    & Acc.\ 0.849 & AUC 0.874 \\
+    \midrule
+    Titanic     & RF     & Acc.\ 0.798 & AUC 0.860 \\
+               & GBM    & Acc.\ 0.782 & AUC 0.876 \\
+               & XGB    & Acc.\ 0.786 & AUC 0.865 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Pairwise Spearman correlation of SHAP feature rankings (single run).}
+  \label{tab:spearman}
+  \begin{tabular}{lll}
+    \toprule
+    Dataset    & Model pair & Spearman $r$ \\
+    \midrule
+    California & RF--GBM    & 0.976 \\
+               & RF--XGB    & 0.905 \\
+               & GBM--XGB   & 0.881 \\
+    Adult      & RF--GBM    & 0.943 \\
+               & RF--XGB    & 0.886 \\
+               & GBM--XGB   & 0.943 \\
+    Titanic    & RF--GBM    & 0.964 \\
+               & RF--XGB    & 0.929 \\
+               & GBM--XGB   & 0.964 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Discussion}
+\label{sec:discussion}
+
+Even when model performance is similar (e.g., all three classifiers on Titanic around 78--80\% accuracy), the ordering or composition of the top SHAP features can differ. This supports the view that a single model's explanation should not be treated as the only valid answer. Reporting which model was explained or checking agreement across several models (e.g., via Spearman or top-$k$ overlap) can make conclusions more reliable.
+
+\section{Conclusions}
+\label{sec:conclusions}
+
+We quantified SHAP-based global feature importance stability across Random Forest, Gradient Boosting, and XGBoost on three tabular datasets. Rankings are often highly correlated but not identical; practitioners should be aware of this variability when using SHAP for reporting or feature selection. Future work could include multiple random seeds for confidence intervals and instance-level stability analysis.
+
+\section*{Data Availability}
+Code and instructions to reproduce results are available in the project repository. Datasets are public (California Housing, OpenML adult and titanic).
+
+\begin{thebibliography}{9}
+\bibitem{shap}
+  Lundberg, S.M.; Lee, S.-I. A Unified Approach to Interpreting Model Predictions. In Advances in Neural Information Processing Systems 30; NeurIPS: Long Beach, CA, USA, 2017.
+\bibitem{tree}
+  Lundberg, S.M. et al. Consistent feature attribution for tree ensembles. arXiv:1706.06060, 2017.
+\end{thebibliography}
+
+\end{document}
