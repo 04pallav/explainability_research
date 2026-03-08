@@ -130,6 +130,107 @@ def top_k_overlap(ranks_dict, k=5):
     return out
 
 
+def local_stability_metrics(shap_per_model, top_k=5):
+    """
+    Per-instance stability: for each instance, compute pairwise Spearman and top-k
+    overlap of feature ranks (by |SHAP|), then summarize.
+    shap_per_model: dict of model_name -> array (n_instances, n_features)
+    Returns: dict with mean_spearman, std_spearman, prop_stable_spearman (r>=0.9),
+             mean_topk_jaccard, prop_stable_topk (jaccard=1 for all pairs).
+    """
+    from scipy.stats import spearmanr
+    names = list(shap_per_model.keys())
+    n_inst, n_feat = shap_per_model[names[0]].shape
+    spearman_per_inst = []
+    topk_jaccard_per_inst = []
+    for idx in range(n_inst):
+        ranks = {}
+        for name in names:
+            abs_shap = np.abs(shap_per_model[name][idx])
+            ranks[name] = np.argsort(np.argsort(-abs_shap))
+        # Mean pairwise Spearman for this instance
+        pair_rs = []
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                r, _ = spearmanr(ranks[names[i]], ranks[names[j]])
+                pair_rs.append(r if not np.isnan(r) else 0.0)
+        spearman_per_inst.append(np.mean(pair_rs))
+        # Min top-k Jaccard across pairs for this instance (1 = all pairs agree on top-k)
+        pair_j = []
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                top_i = set(np.argsort(ranks[names[i]])[:top_k])
+                top_j = set(np.argsort(ranks[names[j]])[:top_k])
+                jaccard = len(top_i & top_j) / len(top_i | top_j) if (top_i | top_j) else 1.0
+                pair_j.append(jaccard)
+        topk_jaccard_per_inst.append(np.min(pair_j))
+    spearman_per_inst = np.array(spearman_per_inst)
+    topk_jaccard_per_inst = np.array(topk_jaccard_per_inst)
+    return {
+        "mean_spearman": float(np.mean(spearman_per_inst)),
+        "std_spearman": float(np.std(spearman_per_inst)),
+        "prop_stable_spearman": float(np.mean(spearman_per_inst >= 0.9)),
+        "mean_topk_jaccard": float(np.mean(topk_jaccard_per_inst)),
+        "prop_stable_topk": float(np.mean(topk_jaccard_per_inst >= 1.0)),
+    }
+
+
+def _update_local_stability_tex():
+    """Update paper/main.tex local stability table from all paper/exported_<dataset>.json."""
+    import json
+    import re
+    tex_path = "paper/main.tex"
+    if not os.path.isfile(tex_path):
+        return
+    datasets = ["california", "adult", "titanic"]
+    display = {"california": "California", "adult": "Adult", "titanic": "Titanic"}
+    rows_data = []
+    shap_sample = None
+    for d in datasets:
+        path = f"paper/exported_{d}.json"
+        if os.path.isfile(path):
+            with open(path) as f:
+                data = json.load(f)
+            ls = data.get("local_stability", {})
+            if shap_sample is None:
+                shap_sample = data.get("shap_sample", 200)
+            rows_data.append((
+                display[d],
+                ls.get("mean_spearman"), ls.get("std_spearman"),
+                ls.get("prop_stable_spearman"), ls.get("mean_topk_jaccard"), ls.get("prop_stable_topk"),
+            ))
+        else:
+            rows_data.append((display[d], None, None, None, None, None))
+    with open(tex_path) as f:
+        tex = f.read()
+    # Build new table rows
+    lines = []
+    for label, m, s, p_s, j, p_t in rows_data:
+        if m is not None:
+            pct_s = int(round(p_s * 100))
+            pct_t = int(round(p_t * 100))
+            lines.append(f"    {label:10} & {m:.2f} ({s:.2f}) & {pct_s}\\%  & {j:.2f} & {pct_t}\\% \\\\")
+        else:
+            lines.append(f"    {label:10} & -- (--) & --\\%  & -- & --\\% \\\\")
+    new_block = "\n".join(lines)
+    # Replace caption instance count (first occurrence in caption for tab:local)
+    if shap_sample is not None:
+        tex = re.sub(
+            r"(single run, )\d+( instances\))",
+            rf"\g<1>{shap_sample}\2",
+            tex,
+            count=1,
+        )
+    # Replace the three data rows (between \midrule and \bottomrule in tab:local)
+    pattern = r"(\\label\{tab:local\}\s+\\begin\{tabular\}\{lcccc\}\s+\\toprule\s+Dataset.*?\\midrule\s+)(.*?)(\s+\\bottomrule\s+\\end\{tabular\})"
+    match = re.search(pattern, tex, re.DOTALL)
+    if match:
+        tex = tex[: match.start(2)] + new_block + "\n" + match.group(3) + tex[match.end(3) :]
+    with open(tex_path, "w") as f:
+        f.write(tex)
+    print(f"Updated {tex_path} local stability table (n={shap_sample})")
+
+
 def main():
     parser = argparse.ArgumentParser(description="SHAP stability across models")
     parser.add_argument("--dataset", choices=["california", "adult", "titanic"], default="california")
@@ -156,6 +257,7 @@ def main():
     importance_ranks = {}
     mean_abs_shap_by_model = {}
     metrics_by_model = {}
+    shap_per_model = {}
 
     for name, model in models.items():
         model.fit(X_train, y_train)
@@ -167,7 +269,11 @@ def main():
             y_proba = model.predict_proba(X_test)[:, 1]
             metrics_by_model[name] = {"Accuracy": accuracy_score(y_test, y_pred), "AUC": roc_auc_score(y_test, y_proba)}
         explainer = shap.TreeExplainer(model, X_background)
-        mean_abs = mean_abs_shap_importance(explainer, X_background, X_explain)
+        shap_vals = explainer.shap_values(X_explain, check_additivity=False)
+        if isinstance(shap_vals, list):
+            shap_vals = np.sum(np.abs(shap_vals), axis=0)
+        shap_per_model[name] = np.array(shap_vals)
+        mean_abs = np.abs(shap_per_model[name]).mean(axis=0)
         mean_abs_shap_by_model[name] = mean_abs
         importance_ranks[name] = np.argsort(np.argsort(-mean_abs))
 
@@ -185,6 +291,14 @@ def main():
     print(f"\n--- Top-{args.top_k} feature overlap (Jaccard) ---")
     for m1, m2, j in top_k_overlap(importance_ranks, k=args.top_k):
         print(f"  {m1} vs {m2}: {j:.3f}")
+
+    # Instance-level (local) stability
+    local_metrics = local_stability_metrics(shap_per_model, top_k=args.top_k)
+    print("\n--- Instance-level (local) stability ---")
+    print(f"  Mean pairwise Spearman per instance: {local_metrics['mean_spearman']:.3f} (std {local_metrics['std_spearman']:.3f})")
+    print(f"  Proportion of instances with mean pairwise r >= 0.9: {local_metrics['prop_stable_spearman']:.2%}")
+    print(f"  Mean min top-{args.top_k} Jaccard per instance: {local_metrics['mean_topk_jaccard']:.3f}")
+    print(f"  Proportion of instances with all pairs top-{args.top_k} identical: {local_metrics['prop_stable_topk']:.2%}")
 
     # Top features per model
     print("\n--- Top 5 features by mean |SHAP| per model ---")
@@ -206,11 +320,13 @@ def main():
             "spearman": [(m1, m2, float(r)) for m1, m2, r, _ in spearman_rank_correlation(importance_ranks)],
             "top5_overlap": [(m1, m2, float(j)) for m1, m2, j in top_k_overlap(importance_ranks, k=args.top_k)],
             "top5_by_model": top5_by_model,
+            "local_stability": {k: (float(v) if isinstance(v, (int, float)) else v) for k, v in local_metrics.items()},
         }
         path = f"paper/exported_{args.dataset}.json"
         with open(path, "w") as f:
             json.dump(out, f, indent=2)
         print(f"Exported table data: {path}")
+        _update_local_stability_tex()
 
     if args.save_figures:
         import matplotlib
