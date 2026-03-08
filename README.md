@@ -2,7 +2,7 @@
 Repo for explainability research.
 
 ## Requirements
-- **Python 3.10** (same as CI). Use `pyenv install 3.10` and `pyenv local 3.10` if needed.
+- **Python 3.9** (same as CI). Use `pyenv install 3.9` and `pyenv local 3.9` if needed.
 - Install deps: `pip install -r requirements.txt`
 
 ## Run
