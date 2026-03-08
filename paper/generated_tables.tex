@@ -1,0 +1,95 @@
+% Auto-generated from paper/exported_<dataset>.json. Do not edit. Run: python shap_stability.py --dataset california --export-tables (and adult, titanic).
+\begin{table}[htbp]
+  \centering
+  \caption{Test-set performance (single run, seed 42).}
+  \label{tab:perf}
+  \begin{tabular}{llll}
+    \toprule
+    Dataset    & Model  & Metric 1   & Metric 2   \\
+    \midrule
+    California   & RF     & RMSE 0.505 & $R^2$ 0.805 \\
+                 & GBM    & RMSE 0.542 & $R^2$ 0.776 \\
+                 & XGB    & RMSE 0.474 & $R^2$ 0.829 \\
+    \midrule
+    Adult        & RF     & Acc.\ 0.809 & AUC 0.827 \\
+                 & GBM    & Acc.\ 0.844 & AUC 0.868 \\
+                 & XGB    & Acc.\ 0.849 & AUC 0.874 \\
+    \midrule
+    Titanic      & RF     & Acc.\ 0.798 & AUC 0.860 \\
+                 & GBM    & Acc.\ 0.782 & AUC 0.876 \\
+                 & XGB    & Acc.\ 0.786 & AUC 0.865 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Pairwise Spearman correlation of SHAP feature rankings (single run).}
+  \label{tab:spearman}
+  \begin{tabular}{lll}
+    \toprule
+    Dataset    & Model pair & Spearman $r$ \\
+    \midrule
+    California   & RF--GBM    & 0.952 \\
+                 & RF--XGB    & 0.833 \\
+                 & GBM--XGB   & 0.929 \\
+    Adult        & RF--GBM    & 1.000 \\
+                 & RF--XGB    & 0.886 \\
+                 & GBM--XGB   & 0.886 \\
+    Titanic      & RF--GBM    & 0.964 \\
+                 & RF--XGB    & 0.929 \\
+                 & GBM--XGB   & 0.964 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Top-5 feature overlap (Jaccard index) between model pairs.}
+  \label{tab:overlap}
+  \begin{tabular}{lll}
+    \toprule
+    Dataset    & Model pair & Jaccard (top-5) \\
+    \midrule
+    California   & RF--GBM    & 1.000 \\
+                 & RF--XGB    & 0.667 \\
+                 & GBM--XGB   & 0.667 \\
+    Adult        & RF--GBM    & 1.000 \\
+                 & RF--XGB    & 1.000 \\
+                 & GBM--XGB   & 1.000 \\
+    Titanic      & RF--GBM    & 1.000 \\
+                 & RF--XGB    & 1.000 \\
+                 & GBM--XGB   & 1.000 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Top-5 features by mean $|$\texttt{SHAP}$|$ per model (California Housing).}
+  \label{tab:top5}
+  \begin{tabular}{ll}
+    \toprule
+    Model & Top-5 features (most to least important) \\
+    \midrule
+    RF     & MedInc, Latitude, AveOccup, Longitude, HouseAge \\
+    GBM    & Latitude, MedInc, Longitude, AveOccup, HouseAge \\
+    XGB    & Latitude, Longitude, MedInc, AveOccup, AveRooms \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Instance-level (local) stability: per-instance agreement across the three models (single run, 30 instances). Mean $\rho$ = mean over instances of mean pairwise Spearman; Prop.\ stable = fraction of instances with mean pairwise $\rho \geq 0.9$; Mean min Jaccard = mean over instances of minimum pairwise top-5 Jaccard; Prop.\ top-5 identical = fraction of instances where all three models have the same top-5 set.}
+  \label{tab:local}
+  \begin{tabular}{lcccc}
+    \toprule
+    Dataset    & Mean $\rho$ (std)   & Prop.\ stable & Mean min Jaccard & Prop.\ top-5 identical \\
+    \midrule
+    California & 0.78 (0.10) & 13\%  & 0.66 & 10\% \\
+    Adult      & 0.70 (0.22) & 17\%  & 0.73 & 20\% \\
+    Titanic    & 0.70 (0.17) & 3\%  & 0.66 & 13\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}

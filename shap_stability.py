@@ -26,6 +26,12 @@ try:
 except ImportError:
     HAS_XGB = False
 
+try:
+    import lime.lime_tabular as lt
+    HAS_LIME = True
+except ImportError:
+    HAS_LIME = False
+
 # --- Data loading ---
 
 def load_california(data_path=None):
@@ -102,6 +108,46 @@ def mean_abs_shap_importance(explainer, X_background, X_explain):
         shap_vals = np.sum(np.abs(shap_vals), axis=0)
     return np.abs(shap_vals).mean(axis=0)
 
+
+def lime_global_importance(model, X_train, X_explain, feature_names, task, num_samples=1000, num_features=15):
+    """
+    LIME: for each row in X_explain, explain_instance; build (n_inst, n_feat) weights;
+    return mean |weight| per feature and rank (same convention as SHAP).
+    """
+    mode = "regression" if task == "regression" else "classification"
+    explainer = lt.LimeTabularExplainer(
+        training_data=np.array(X_train),
+        feature_names=feature_names,
+        mode=mode,
+        random_state=42,
+    )
+    n_inst, n_feat = len(X_explain), len(feature_names)
+    weights = np.zeros((n_inst, n_feat))
+    for i in range(n_inst):
+        row = X_explain.iloc[i].values
+        def _predict(x):
+            # LIME passes numpy array; wrap to DataFrame to avoid "invalid feature names" warning
+            if hasattr(x, "shape") and len(x.shape) == 2:
+                return model.predict(pd.DataFrame(x, columns=feature_names))
+            return model.predict(x)
+        def _predict_proba(x):
+            if hasattr(x, "shape") and len(x.shape) == 2:
+                return model.predict_proba(pd.DataFrame(x, columns=feature_names))
+            return model.predict_proba(x)
+        pred_fn = _predict if task == "regression" else _predict_proba
+        exp = explainer.explain_instance(row, pred_fn, num_samples=num_samples, num_features=min(num_features, n_feat))
+        # as_list() returns list of (feature_name, weight) or (feature_idx, weight) depending on version
+        lst = exp.as_list() if task == "regression" else exp.as_list(1)
+        for item, w in lst:
+            if isinstance(item, (int, np.integer)) and 0 <= item < n_feat:
+                weights[i, item] = w
+            elif isinstance(item, str) and item in feature_names:
+                weights[i, feature_names.index(item)] = w
+    mean_abs = np.abs(weights).mean(axis=0)
+    rank = np.argsort(np.argsort(-mean_abs))
+    return mean_abs, rank
+
+
 def spearman_rank_correlation(ranks_dict):
     """Pairwise Spearman correlation of feature ranks across models."""
     from scipy.stats import spearmanr
@@ -175,60 +221,161 @@ def local_stability_metrics(shap_per_model, top_k=5):
     }
 
 
-def _update_local_stability_tex():
-    """Update paper/main.tex local stability table from all paper/exported_<dataset>.json."""
+def _model_short(name):
+    m = {"RandomForest": "RF", "GradientBoosting": "GBM", "XGBoost": "XGB"}
+    return m.get(name, name)
+
+
+def _pair_short(m1, m2):
+    return f"{_model_short(m1)}--{_model_short(m2)}"
+
+
+def _write_generated_tables_tex():
+    """Write paper/generated_tables.tex from all paper/exported_<dataset>.json. No numbers in main.tex; all from run data."""
     import json
-    import re
-    tex_path = "paper/main.tex"
-    if not os.path.isfile(tex_path):
-        return
+    os.makedirs("paper", exist_ok=True)
     datasets = ["california", "adult", "titanic"]
     display = {"california": "California", "adult": "Adult", "titanic": "Titanic"}
-    rows_data = []
+    data_by_ds = {}
     shap_sample = None
     for d in datasets:
         path = f"paper/exported_{d}.json"
         if os.path.isfile(path):
             with open(path) as f:
-                data = json.load(f)
-            ls = data.get("local_stability", {})
+                data_by_ds[d] = json.load(f)
             if shap_sample is None:
-                shap_sample = data.get("shap_sample", 200)
-            rows_data.append((
-                display[d],
-                ls.get("mean_spearman"), ls.get("std_spearman"),
-                ls.get("prop_stable_spearman"), ls.get("mean_topk_jaccard"), ls.get("prop_stable_topk"),
-            ))
+                shap_sample = data_by_ds[d].get("shap_sample", 200)
+
+    out = ["% Auto-generated from paper/exported_<dataset>.json. Do not edit. Run: python shap_stability.py --dataset california --export-tables (and adult, titanic)."]
+
+    # Table: perf
+    out.append("\\begin{table}[htbp]")
+    out.append("  \\centering")
+    out.append("  \\caption{Test-set performance (single run, seed 42).}")
+    out.append("  \\label{tab:perf}")
+    out.append("  \\begin{tabular}{llll}")
+    out.append("    \\toprule")
+    out.append("    Dataset    & Model  & Metric 1   & Metric 2   \\\\")
+    out.append("    \\midrule")
+    for d in datasets:
+        if d in data_by_ds:
+            m = data_by_ds[d]["metrics"]
+            task = "regression" if d == "california" else "classification"
+            names = list(m.keys())
+            for i, mod in enumerate(names):
+                first_col = display[d] if i == 0 else ""
+                short = _model_short(mod)
+                row = m[mod]
+                if task == "regression":
+                    line = f"    {first_col:12} & {short:6} & RMSE {row['RMSE']:.3f} & $R^2$ {row['R2']:.3f} \\\\"
+                else:
+                    line = f"    {first_col:12} & {short:6} & Acc.\\ {row['Accuracy']:.3f} & AUC {row['AUC']:.3f} \\\\"
+                out.append(line)
         else:
-            rows_data.append((display[d], None, None, None, None, None))
-    with open(tex_path) as f:
-        tex = f.read()
-    # Build new table rows
-    lines = []
-    for label, m, s, p_s, j, p_t in rows_data:
-        if m is not None:
-            pct_s = int(round(p_s * 100))
-            pct_t = int(round(p_t * 100))
-            lines.append(f"    {label:10} & {m:.2f} ({s:.2f}) & {pct_s}\\%  & {j:.2f} & {pct_t}\\% \\\\")
+            out.append(f"    {display[d]:12} & --     & -- & -- \\\\")
+        if d != datasets[-1]:
+            out.append("    \\midrule")
+    out.append("    \\bottomrule")
+    out.append("  \\end{tabular}")
+    out.append("\\end{table}")
+
+    # Table: spearman
+    out.append("")
+    out.append("\\begin{table}[htbp]")
+    out.append("  \\centering")
+    out.append("  \\caption{Pairwise Spearman correlation of SHAP feature rankings (single run).}")
+    out.append("  \\label{tab:spearman}")
+    out.append("  \\begin{tabular}{lll}")
+    out.append("    \\toprule")
+    out.append("    Dataset    & Model pair & Spearman $r$ \\\\")
+    out.append("    \\midrule")
+    for d in datasets:
+        if d in data_by_ds:
+            for idx, (m1, m2, r) in enumerate(data_by_ds[d].get("spearman", [])):
+                first = display[d] if idx == 0 else ""
+                out.append(f"    {first:12} & {_pair_short(m1, m2):10} & {r:.3f} \\\\")
         else:
-            lines.append(f"    {label:10} & -- (--) & --\\%  & -- & --\\% \\\\")
-    new_block = "\n".join(lines)
-    # Replace caption instance count (first occurrence in caption for tab:local)
-    if shap_sample is not None:
-        tex = re.sub(
-            r"(single run, )\d+( instances\))",
-            rf"\g<1>{shap_sample}\2",
-            tex,
-            count=1,
-        )
-    # Replace the three data rows (between \midrule and \bottomrule in tab:local)
-    pattern = r"(\\label\{tab:local\}\s+\\begin\{tabular\}\{lcccc\}\s+\\toprule\s+Dataset.*?\\midrule\s+)(.*?)(\s+\\bottomrule\s+\\end\{tabular\})"
-    match = re.search(pattern, tex, re.DOTALL)
-    if match:
-        tex = tex[: match.start(2)] + new_block + "\n" + match.group(3) + tex[match.end(3) :]
-    with open(tex_path, "w") as f:
-        f.write(tex)
-    print(f"Updated {tex_path} local stability table (n={shap_sample})")
+            out.append(f"    {display[d]:12} & --         & -- \\\\")
+    out.append("    \\bottomrule")
+    out.append("  \\end{tabular}")
+    out.append("\\end{table}")
+
+    # Table: overlap
+    out.append("")
+    out.append("\\begin{table}[htbp]")
+    out.append("  \\centering")
+    out.append("  \\caption{Top-5 feature overlap (Jaccard index) between model pairs.}")
+    out.append("  \\label{tab:overlap}")
+    out.append("  \\begin{tabular}{lll}")
+    out.append("    \\toprule")
+    out.append("    Dataset    & Model pair & Jaccard (top-5) \\\\")
+    out.append("    \\midrule")
+    for d in datasets:
+        if d in data_by_ds:
+            for idx, (m1, m2, j) in enumerate(data_by_ds[d].get("top5_overlap", [])):
+                first = display[d] if idx == 0 else ""
+                out.append(f"    {first:12} & {_pair_short(m1, m2):10} & {j:.3f} \\\\")
+        else:
+            out.append(f"    {display[d]:12} & --         & -- \\\\")
+    out.append("    \\bottomrule")
+    out.append("  \\end{tabular}")
+    out.append("\\end{table}")
+
+    # Table: top5 (California only)
+    out.append("")
+    out.append("\\begin{table}[htbp]")
+    out.append("  \\centering")
+    out.append("  \\caption{Top-5 features by mean $|$\\texttt{SHAP}$|$ per model (California Housing).}")
+    out.append("  \\label{tab:top5}")
+    out.append("  \\begin{tabular}{ll}")
+    out.append("    \\toprule")
+    out.append("    Model & Top-5 features (most to least important) \\\\")
+    out.append("    \\midrule")
+    if "california" in data_by_ds:
+        for mod, feats in data_by_ds["california"].get("top5_by_model", {}).items():
+            short = _model_short(mod)
+            out.append(f"    {short:6} & {', '.join(feats[:5])} \\\\")
+    else:
+        out.append("    --     & (run script to generate) \\\\")
+    out.append("    \\bottomrule")
+    out.append("  \\end{tabular}")
+    out.append("\\end{table}")
+
+    # Table: local stability
+    n_inst = shap_sample if shap_sample is not None else 200
+    out.append("")
+    out.append("\\begin{table}[htbp]")
+    out.append("  \\centering")
+    out.append(f"  \\caption{{Instance-level (local) stability: per-instance agreement across the three models (single run, {n_inst} instances). Mean $\\rho$ = mean over instances of mean pairwise Spearman; Prop.\\ stable = fraction of instances with mean pairwise $\\rho \\geq 0.9$; Mean min Jaccard = mean over instances of minimum pairwise top-5 Jaccard; Prop.\\ top-5 identical = fraction of instances where all three models have the same top-5 set.}}")
+    out.append("  \\label{tab:local}")
+    out.append("  \\begin{tabular}{lcccc}")
+    out.append("    \\toprule")
+    out.append("    Dataset    & Mean $\\rho$ (std)   & Prop.\\ stable & Mean min Jaccard & Prop.\\ top-5 identical \\\\")
+    out.append("    \\midrule")
+    for d in datasets:
+        if d in data_by_ds:
+            ls = data_by_ds[d].get("local_stability", {})
+            m = ls.get("mean_spearman")
+            s = ls.get("std_spearman")
+            p_s = ls.get("prop_stable_spearman")
+            j = ls.get("mean_topk_jaccard")
+            p_t = ls.get("prop_stable_topk")
+            if m is not None:
+                pct_s = int(round(p_s * 100))
+                pct_t = int(round(p_t * 100))
+                out.append(f"    {display[d]:10} & {m:.2f} ({s:.2f}) & {pct_s}\\%  & {j:.2f} & {pct_t}\\% \\\\")
+            else:
+                out.append(f"    {display[d]:10} & -- (--) & --\\%  & -- & --\\% \\\\")
+        else:
+            out.append(f"    {display[d]:10} & -- (--) & --\\%  & -- & --\\% \\\\")
+    out.append("    \\bottomrule")
+    out.append("  \\end{tabular}")
+    out.append("\\end{table}")
+
+    gen_path = "paper/generated_tables.tex"
+    with open(gen_path, "w") as f:
+        f.write("\n".join(out))
+    print(f"Wrote {gen_path} from exported JSONs (n={n_inst})")
 
 
 def main():
@@ -240,6 +387,7 @@ def main():
     parser.add_argument("--save-figures", action="store_true", help="Save importance bar chart to --figures-dir")
     parser.add_argument("--figures-dir", default="paper/figures", help="Directory for saved figures")
     parser.add_argument("--export-tables", action="store_true", help="Write metrics to paper/exported_<dataset>.json for verifying table numbers")
+    parser.add_argument("--no-lime", action="store_true", help="Skip LIME (faster run)")
     args = parser.parse_args()
 
     print("Loading data...")
@@ -309,6 +457,33 @@ def main():
         top5_by_model[name] = top
         print(f"  {name}: {top}")
 
+    # LIME (optional)
+    importance_ranks_lime = {}
+    mean_abs_lime_by_model = {}
+    shap_vs_lime_spearman = []
+    if HAS_LIME and not args.no_lime:
+        print("\n--- LIME global importance (same instances) ---")
+        for name, model in models.items():
+            mean_abs_lim, rank_lim = lime_global_importance(
+                model, X_train, X_explain, feature_names, task,
+                num_samples=1000, num_features=min(15, len(feature_names)),
+            )
+            mean_abs_lime_by_model[name] = mean_abs_lim
+            importance_ranks_lime[name] = rank_lim
+        print("  LIME pairwise Spearman:")
+        for m1, m2, r, _ in spearman_rank_correlation(importance_ranks_lime):
+            print(f"    {m1} vs {m2}: r = {r:.3f}")
+        print(f"  LIME top-{args.top_k} Jaccard:")
+        for m1, m2, j in top_k_overlap(importance_ranks_lime, k=args.top_k):
+            print(f"    {m1} vs {m2}: {j:.3f}")
+        print("  SHAP vs LIME (Spearman, per model):")
+        from scipy.stats import spearmanr
+        for name in models:
+            r, _ = spearmanr(importance_ranks[name], importance_ranks_lime[name])
+            r = r if not np.isnan(r) else 0.0
+            shap_vs_lime_spearman.append((name, float(r)))
+            print(f"    {name}: r = {r:.3f}")
+
     if args.export_tables:
         import json
         import os
@@ -322,11 +497,15 @@ def main():
             "top5_by_model": top5_by_model,
             "local_stability": {k: (float(v) if isinstance(v, (int, float)) else v) for k, v in local_metrics.items()},
         }
+        if importance_ranks_lime:
+            out["lime_spearman"] = [(m1, m2, float(r)) for m1, m2, r, _ in spearman_rank_correlation(importance_ranks_lime)]
+            out["lime_top5_overlap"] = [(m1, m2, float(j)) for m1, m2, j in top_k_overlap(importance_ranks_lime, k=args.top_k)]
+            out["shap_vs_lime_spearman"] = [(m, float(r)) for m, r in shap_vs_lime_spearman]
         path = f"paper/exported_{args.dataset}.json"
         with open(path, "w") as f:
             json.dump(out, f, indent=2)
         print(f"Exported table data: {path}")
-        _update_local_stability_tex()
+        _write_generated_tables_tex()
 
     if args.save_figures:
         import matplotlib

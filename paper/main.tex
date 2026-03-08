@@ -7,7 +7,7 @@
 \usepackage{hyperref}
 \usepackage[margin=2.5cm]{geometry}
 
-\title{Evaluating Feature Attribution Stability Using SHAP Across Multiple Machine Learning Models}
+\title{Evaluating Feature Attribution Stability Using SHAP and LIME Across Multiple Machine Learning Models}
 
 \author{
   Pallav Anand \\
@@ -21,17 +21,17 @@
 \maketitle
 
 \begin{abstract}
-We train three tree-based models (Random Forest, Gradient Boosting, and XGBoost) on the same tabular datasets and compare their SHAP-based global feature importance and \emph{instance-level} (local) stability. Using three public datasets---California Housing (regression), Adult income (classification), and Titanic (classification)---we compute pairwise Spearman rank correlation of feature importance, top-$k$ overlap (Jaccard index), and per-instance metrics (mean pairwise Spearman per instance, proportion of ``stable'' instances). We find that SHAP-derived importance rankings are often highly correlated across models (e.g., Spearman $r \approx 0.88$--$0.98$) but local attributions are less stable; many instances are not Spearman-stable or top-$k$-stable. We report test-set model performance and conclude that practitioners should not treat a single model's SHAP explanation as unique; checking consistency across models or reporting which model was explained is recommended.
+We train three tree-based models (Random Forest, Gradient Boosting, and XGBoost) on the same tabular datasets and compare their SHAP-based and LIME-based global feature importance and \emph{instance-level} (local) stability. Using three public datasets---California Housing, Adult income, and Titanic---we compute pairwise Spearman rank correlation of feature importance (SHAP and LIME), top-$k$ overlap, per-instance stability, and \emph{SHAP--LIME} rank correlation per model. We find that SHAP-derived rankings are often highly correlated across models but local attributions are less stable; LIME rankings can be stable across models yet disagree with SHAP. We report test-set performance and recommend checking consistency across models and across explanation methods (SHAP vs.\ LIME).
 \end{abstract}
 
-\noindent\textbf{Keywords:} SHAP; feature attribution; explainable AI; model comparison; stability; tree ensembles.
+\noindent\textbf{Keywords:} SHAP; LIME; feature attribution; explainable AI; model comparison; stability; tree ensembles.
 
 \section{Introduction}
 \label{sec:intro}
 
 SHAP (SHapley Additive exPlanations) is widely used to explain predictions of machine learning models by attributing importance to each input feature. When multiple models achieve similar predictive performance on the same task, a natural question is whether their explanations agree: do they identify the same features as important, and in the same order?
 
-Prior work has shown that feature attributions can vary with model choice and that different models with comparable accuracy may yield different local explanations. We quantify this phenomenon for \emph{global} SHAP-based feature importance across three popular tree-based models---Random Forest, Gradient Boosting, and XGBoost---on three public datasets. We also address the gap of \emph{instance-level} stability: whether local attributions are stable across models for the same instance, and how to summarize that (e.g., per-instance rank correlation, proportion of ``stable'' instances). We measure agreement via pairwise Spearman rank correlation and top-$k$ feature set overlap (Jaccard index), and we report model performance metrics so that explanation stability can be interpreted alongside predictive performance.
+Prior work has shown that feature attributions can vary with model choice and that different models with comparable accuracy may yield different local explanations. We quantify this phenomenon for \emph{global} SHAP-based feature importance across three popular tree-based models---Random Forest, Gradient Boosting, and XGBoost---on three public datasets. We also address the gap of \emph{instance-level} stability: whether local attributions are stable across models for the same instance, and how to summarize that (e.g., per-instance rank correlation, proportion of ``stable'' instances). We measure agreement via pairwise Spearman rank correlation and top-$k$ overlap. We also compare SHAP with LIME (Local Interpretable Model-agnostic Explanations): both are post-hoc attribution methods, but LIME fits a local linear surrogate while SHAP uses Shapley values; we report whether their global importance rankings agree per model.
 
 \section{Related Work}
 \label{sec:related}
@@ -62,6 +62,9 @@ Regression models are used for California Housing; classifiers for Adult and Tit
 \subsection{SHAP and Global Importance}
 We use TreeExplainer (SHAP) with a small background set (100 samples from the training set) and compute SHAP values for a subsample of the test set (200 samples by default). For each model we define \emph{global} feature importance as the mean absolute SHAP value per feature over this subsample. Features are then ranked by this importance (rank 1 = most important).
 
+\subsection{LIME}
+We use LIME (LimeTabularExplainer) on the same subsample of instances. For each instance we fit a local linear surrogate (default 1000 samples) and obtain feature weights; we aggregate to \emph{global} LIME importance as the mean absolute weight per feature and rank features accordingly. LIME is model-agnostic and can yield different rankings than SHAP. We compute LIME-vs-LIME stability (pairwise Spearman and top-$k$ overlap across the three models) and SHAP--LIME rank correlation per model. LIME can be disabled with \texttt{--no-lime} for faster runs.
+
 \subsection{Stability Metrics}
 \begin{itemize}
   \item \textbf{Spearman rank correlation}: pairwise, between the feature rankings of each pair of models. High $r$ indicates similar ordering of importance.
@@ -79,103 +82,15 @@ We report test-set metrics to contextualize explanation comparison: RMSE and $R^
 
 All numbers below are from a single run with \texttt{random\_state=42} and \texttt{--shap-sample 200}. Reproduce with: \texttt{python shap\_stability.py --dataset california} (and \texttt{adult}, \texttt{titanic}).
 
-Table~\ref{tab:perf} summarizes model performance. Table~\ref{tab:spearman} gives pairwise Spearman correlation of SHAP feature rankings; Table~\ref{tab:overlap} gives top-5 Jaccard overlap. Table~\ref{tab:local} summarizes instance-level stability (mean pairwise Spearman per instance, proportion Spearman-stable, mean min top-5 Jaccard, proportion top-5 identical). Table~\ref{tab:top5} shows the top-5 features by mean $|$\texttt{SHAP}$|$ per model for California Housing. Figure~\ref{fig:importance} illustrates global feature importance for one dataset. Rankings are often highly correlated but the top-5 set or order can differ across models (e.g., XGBoost vs.\ others on California); local stability is generally lower than global, with many instances not Spearman-stable or top-5-stable.
+Table~\ref{tab:perf} summarizes model performance. Table~\ref{tab:spearman} gives pairwise Spearman correlation of SHAP feature rankings; Table~\ref{tab:overlap} gives top-5 Jaccard overlap. Table~\ref{tab:local} summarizes instance-level stability (mean pairwise Spearman per instance, proportion Spearman-stable, mean min top-5 Jaccard, proportion top-5 identical). Table~\ref{tab:top5} shows the top-5 features by mean $|$\texttt{SHAP}$|$ per model for California Housing. Figure~\ref{fig:importance} illustrates global feature importance for one dataset. Rankings are often highly correlated but the top-5 set or order can differ across models (e.g., XGBoost vs.\ others on California); local stability is generally lower than global. When LIME is run on the same instances, LIME-vs-LIME Spearman is often high (models agree under LIME), but SHAP--LIME Spearman per model can be low or negative, indicating that the two methods do not always identify the same features as important.
 
-\begin{table}[htbp]
-  \centering
-  \caption{Test-set performance (single run, seed 42).}
-  \label{tab:perf}
-  \begin{tabular}{llll}
-    \toprule
-    Dataset    & Model  & Metric 1   & Metric 2   \\
-    \midrule
-    California & RF     & RMSE 0.505 & $R^2$ 0.805 \\
-               & GBM    & RMSE 0.542 & $R^2$ 0.776 \\
-               & XGB    & RMSE 0.474 & $R^2$ 0.829 \\
-    \midrule
-    Adult       & RF     & Acc.\ 0.809 & AUC 0.827 \\
-               & GBM    & Acc.\ 0.844 & AUC 0.868 \\
-               & XGB    & Acc.\ 0.849 & AUC 0.874 \\
-    \midrule
-    Titanic     & RF     & Acc.\ 0.798 & AUC 0.860 \\
-               & GBM    & Acc.\ 0.782 & AUC 0.876 \\
-               & XGB    & Acc.\ 0.786 & AUC 0.865 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-\begin{table}[htbp]
-  \centering
-  \caption{Pairwise Spearman correlation of SHAP feature rankings (single run).}
-  \label{tab:spearman}
-  \begin{tabular}{lll}
-    \toprule
-    Dataset    & Model pair & Spearman $r$ \\
-    \midrule
-    California & RF--GBM    & 0.976 \\
-               & RF--XGB    & 0.905 \\
-               & GBM--XGB   & 0.881 \\
-    Adult      & RF--GBM    & 0.943 \\
-               & RF--XGB    & 0.886 \\
-               & GBM--XGB   & 0.943 \\
-    Titanic    & RF--GBM    & 0.964 \\
-               & RF--XGB    & 0.929 \\
-               & GBM--XGB   & 0.964 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-\begin{table}[htbp]
-  \centering
-  \caption{Top-5 feature overlap (Jaccard index) between model pairs.}
-  \label{tab:overlap}
-  \begin{tabular}{lll}
-    \toprule
-    Dataset    & Model pair & Jaccard (top-5) \\
-    \midrule
-    California & RF--GBM    & 1.000 \\
-               & RF--XGB    & 0.667 \\
-               & GBM--XGB   & 0.667 \\
-    Adult      & RF--GBM    & 0.667 \\
-               & RF--XGB    & 0.667 \\
-               & GBM--XGB   & 1.000 \\
-    Titanic    & RF--GBM    & 1.000 \\
-               & RF--XGB    & 1.000 \\
-               & GBM--XGB   & 1.000 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-\begin{table}[htbp]
-  \centering
-  \caption{Top-5 features by mean $|$\texttt{SHAP}$|$ per model (California Housing).}
-  \label{tab:top5}
-  \begin{tabular}{ll}
-    \toprule
-    Model & Top-5 features (most to least important) \\
-    \midrule
-    RF    & MedInc, Latitude, Longitude, AveOccup, HouseAge \\
-    GBM   & MedInc, Latitude, Longitude, AveOccup, HouseAge \\
-    XGB   & Latitude, Longitude, MedInc, AveOccup, AveRooms \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-\begin{table}[htbp]
-  \centering
-  \caption{Instance-level (local) stability: per-instance agreement across the three models (single run, 200 instances). Mean $\rho$ = mean over instances of mean pairwise Spearman; Prop.\ stable = fraction of instances with mean pairwise $\rho \geq 0.9$; Mean min Jaccard = mean over instances of minimum pairwise top-5 Jaccard; Prop.\ top-5 identical = fraction of instances where all three models have the same top-5 set.}
-  \label{tab:local}
-  \begin{tabular}{lcccc}
-    \toprule
-    Dataset    & Mean $\rho$ (std)   & Prop.\ stable & Mean min Jaccard & Prop.\ top-5 identical \\
-    \midrule
-        California & 0.79 (0.11) & 18\%  & 0.67 & 16\% \\
-        Adult      & 0.71 (0.21) & 12\%  & 0.73 & 18\% \\
-        Titanic    & 0.69 (0.18) & 2\%  & 0.64 & 12\% \\
-    
-    \bottomrule
-  \end{tabular}
-\end{table}
+\IfFileExists{generated_tables.tex}{\input{generated_tables}}{%
+  \begin{table}[htbp]
+    \centering
+    \caption{Tables not generated. Run \texttt{shap\_stability.py --dataset california --export-tables} (and \texttt{adult}, \texttt{titanic}) then rebuild.}
+    \label{tab:perf}
+  \end{table}
+}
 
 \begin{figure}[htbp]
   \centering
@@ -191,14 +106,14 @@ Table~\ref{tab:perf} summarizes model performance. Table~\ref{tab:spearman} give
 \section{Discussion}
 \label{sec:discussion}
 
-Even when model performance is similar (e.g., all three classifiers on Titanic around 78--80\% accuracy), the ordering or composition of the top SHAP features can differ. This supports the view that a single model's explanation should not be treated as the only valid answer. Reporting which model was explained or checking agreement across several models (e.g., via Spearman or top-$k$ overlap) can make conclusions more reliable.
+Even when model performance is similar (e.g., all three classifiers on Titanic around 78--80\% accuracy), the ordering or composition of the top SHAP features can differ. SHAP and LIME can also disagree on which features matter most, so conclusions should not rely on a single explanation method. Reporting which model and which explainer were used, or checking agreement across models and across methods (SHAP vs.\ LIME), can make conclusions more reliable.
 
 \section{Conclusions}
 \label{sec:conclusions}
 
-We quantified SHAP-based global feature importance stability across Random Forest, Gradient Boosting, and XGBoost on three tabular datasets (California Housing, Adult, Titanic). We also evaluated \emph{instance-level} stability: whether local attributions agree across models for the same instance (per-instance Spearman and top-$k$ agreement, and proportion of ``stable'' instances). Pairwise Spearman rank correlations of global feature importance were high (roughly 0.88--0.98) but not perfect; local stability was generally lower, with many instances not Spearman-stable or top-5-stable.
+We quantified SHAP-based and LIME-based global feature importance stability across Random Forest, Gradient Boosting, and XGBoost on three tabular datasets (California Housing, Adult, Titanic). We also evaluated \emph{instance-level} stability: whether local attributions agree across models for the same instance (per-instance Spearman and top-$k$ agreement, and proportion of ``stable'' instances). Pairwise Spearman rank correlations of global feature importance were high (roughly 0.88--0.98) but not perfect; local stability was generally lower, with many instances not Spearman-stable or top-5-stable.
 
-We conclude that a single model's SHAP explanation should not be treated as the only valid answer: which features matter can depend on the model even when predictive performance is similar. Practitioners should report which model was explained or check agreement across models (e.g., via Spearman or top-$k$ overlap) before drawing strong conclusions from SHAP.
+We conclude that a single model's explanation (SHAP or LIME) should not be treated as the only valid answer: which features matter can depend on the model and on the explainer. Practitioners should report which model and which method were used, or check agreement across models and across methods, before drawing strong conclusions.
 
 Future work could include multiple random seeds for confidence intervals and extension to non-tree models.
 
@@ -210,6 +125,8 @@ Code and instructions to reproduce results are available in the project reposito
   Lundberg, S.M.; Lee, S.-I. A Unified Approach to Interpreting Model Predictions. In Advances in Neural Information Processing Systems 30; NeurIPS: Long Beach, CA, USA, 2017.
 \bibitem{tree}
   Lundberg, S.M. et al. Consistent feature attribution for tree ensembles. arXiv:1706.06060, 2017.
+\bibitem{lime}
+  Ribeiro, M.T.; Singh, S.; Guestrin, C. ``Why should I trust you?'' Explaining the predictions of any classifier. In Proceedings of the 22nd ACM SIGKDD; KDD: San Francisco, CA, USA, 2016.
 \end{thebibliography}
 
 \end{document}
