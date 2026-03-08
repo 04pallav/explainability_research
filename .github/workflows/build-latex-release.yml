@@ -21,7 +21,9 @@ jobs:
         with:
           python-version: "3.10"
       - run: pip install -r requirements.txt
-      - run: python shap_stability.py --dataset california --save-figures --shap-sample 100
+      - run: python shap_stability.py --dataset california --save-figures --export-tables --no-lime --shap-sample 100
+      - run: python shap_stability.py --dataset adult --export-tables --no-lime --shap-sample 100
+      - run: python shap_stability.py --dataset titanic --export-tables --no-lime --shap-sample 100
 
       - name: Compile LaTeX
         uses: xu-cheng/latex-action@v3
