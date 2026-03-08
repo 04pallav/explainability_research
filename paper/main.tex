@@ -160,12 +160,12 @@ Table~\ref{tab:perf} summarizes model performance. Table~\ref{tab:spearman} give
 
 \begin{figure}[htbp]
   \centering
-  \IfFileExists{paper/figures/california_importance.pdf}{%
-    \includegraphics[width=0.85\linewidth]{paper/figures/california_importance.pdf}%
+  \IfFileExists{figures/california_importance.pdf}{%
+    \includegraphics[width=0.85\linewidth]{figures/california_importance.pdf}%
   }{%
-    \parbox{0.7\linewidth}{\centering\small [Figure: run \texttt{shap\_stability.py --dataset california --save-figures} to generate.]}%
+    \parbox{0.7\linewidth}{\centering\small [Run \texttt{shap\_stability.py --dataset california --save-figures} to generate.]}%
   }
-  \caption{Mean $|$\texttt{SHAP}$|$ per feature for California Housing (RF, GBM, XGB). Generate with \texttt{shap\_stability.py --dataset california --save-figures}.}
+  \caption{Mean $|$\texttt{SHAP}$|$ per feature for California Housing (RF, GBM, XGB).}
   \label{fig:importance}
 \end{figure}
 

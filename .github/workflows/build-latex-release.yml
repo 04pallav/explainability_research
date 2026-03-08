@@ -26,13 +26,13 @@ jobs:
       - name: Compile LaTeX
         uses: xu-cheng/latex-action@v3
         with:
-          root_file: paper/main.tex
+          root_file: main.tex
+          working_directory: paper
           compiler: pdflatex
 
       - name: Put PDF next to .tex and commit to repo
         if: github.event_name == 'push'
         run: |
-          cp main.pdf paper/main.pdf
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add paper/main.pdf
@@ -44,6 +44,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: main.pdf
+          files: paper/main.pdf
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
