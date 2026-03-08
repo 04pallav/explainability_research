@@ -1,9 +1,9 @@
-# Pinned from local .venv (pip freeze) so CI matches local.
-certifi==2026.2.25
-numpy==1.21.6
-pandas==1.1.5
-scikit-learn==1.0.2
-scipy==1.7.3
-shap==0.42.1
-xgboost==1.6.2
-matplotlib==3.5.3
+# Ranges compatible with Python 3.7 (local) and 3.10 (CI). numpy<2 and xgboost<3 avoid known issues.
+certifi>=2020.0.0
+numpy>=1.21,<2
+pandas>=1.1,<2
+scikit-learn>=1.0
+scipy>=1.7
+shap>=0.41
+xgboost>=1.5,<3
+matplotlib>=3.3
