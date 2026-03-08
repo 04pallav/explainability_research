@@ -16,6 +16,13 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Python and generate figure
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements.txt
+      - run: python shap_stability.py --dataset california --save-figures --shap-sample 100
+
       - name: Compile LaTeX
         uses: xu-cheng/latex-action@v3
         with:

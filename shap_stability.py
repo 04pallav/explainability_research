@@ -136,6 +136,9 @@ def main():
     parser.add_argument("--data-path", default=None, help="Path to local CSV (for california: must have MedHouseVal column)")
     parser.add_argument("--shap-sample", type=int, default=200, help="Rows to use for SHAP (background + explain)")
     parser.add_argument("--top-k", type=int, default=5, help="Top-k features for overlap metric")
+    parser.add_argument("--save-figures", action="store_true", help="Save importance bar chart to --figures-dir")
+    parser.add_argument("--figures-dir", default="paper/figures", help="Directory for saved figures")
+    parser.add_argument("--export-tables", action="store_true", help="Write metrics to paper/exported_<dataset>.json for verifying table numbers")
     args = parser.parse_args()
 
     print("Loading data...")
@@ -185,10 +188,52 @@ def main():
 
     # Top features per model
     print("\n--- Top 5 features by mean |SHAP| per model ---")
+    top5_by_model = {}
     for name in models:
         order = np.argsort(-mean_abs_shap_by_model[name])
         top = [feature_names[i] for i in order[:5]]
+        top5_by_model[name] = top
         print(f"  {name}: {top}")
+
+    if args.export_tables:
+        import json
+        import os
+        os.makedirs("paper", exist_ok=True)
+        out = {
+            "dataset": args.dataset,
+            "shap_sample": args.shap_sample,
+            "metrics": {name: metrics_by_model[name] for name in models},
+            "spearman": [(m1, m2, float(r)) for m1, m2, r, _ in spearman_rank_correlation(importance_ranks)],
+            "top5_overlap": [(m1, m2, float(j)) for m1, m2, j in top_k_overlap(importance_ranks, k=args.top_k)],
+            "top5_by_model": top5_by_model,
+        }
+        path = f"paper/exported_{args.dataset}.json"
+        with open(path, "w") as f:
+            json.dump(out, f, indent=2)
+        print(f"Exported table data: {path}")
+
+    if args.save_figures:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import os
+        os.makedirs(args.figures_dir, exist_ok=True)
+        n_f = len(feature_names)
+        x = np.arange(n_f)
+        w = 0.25
+        fig, ax = plt.subplots(figsize=(max(6, n_f * 0.5), 4))
+        for i, (name, mean_abs) in enumerate(mean_abs_shap_by_model.items()):
+            ax.bar(x + i * w, mean_abs, w, label=name)
+        ax.set_xticks(x + w)
+        ax.set_xticklabels(feature_names, rotation=45, ha="right")
+        ax.set_ylabel("Mean |SHAP|")
+        ax.set_title(f"Global feature importance ({args.dataset})")
+        ax.legend()
+        fig.tight_layout()
+        out = os.path.join(args.figures_dir, f"{args.dataset}_importance.pdf")
+        fig.savefig(out)
+        plt.close()
+        print(f"Saved figure: {out}")
 
 
 if __name__ == "__main__":
