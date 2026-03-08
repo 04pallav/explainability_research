@@ -1,10 +1,10 @@
-# Ranges compatible with Python 3.7 (local) and 3.10 (CI). numpy<2 and xgboost<3 avoid known issues.
-certifi>=2020.0.0
-numpy>=1.21,<2
-pandas>=1.1,<2
-scikit-learn>=1.0
-scipy>=1.7
-shap>=0.41
-lime>=0.2
-xgboost>=1.5,<3
-matplotlib>=3.3
+# Pinned versions so local and CI use the same deps. Use Python 3.10 for consistency.
+certifi==2024.2.2
+numpy==1.26.4
+pandas==2.1.4
+scikit-learn==1.3.2
+scipy==1.11.4
+shap==0.44.0
+lime==0.2.0.1
+xgboost==2.0.3
+matplotlib==3.8.2

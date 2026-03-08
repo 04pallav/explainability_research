@@ -157,7 +157,7 @@ def spearman_rank_correlation(ranks_dict):
     for i in range(n):
         for j in range(i + 1, n):
             r, p = spearmanr(ranks_dict[names[i]], ranks_dict[names[j]])
-            results.append((names[i], names[j], r, p))
+            results.append((names[i], names[j], float(np.asarray(r).flat[0]), float(np.asarray(p).flat[0])))
     return results
 
 def top_k_overlap(ranks_dict, k=5):
