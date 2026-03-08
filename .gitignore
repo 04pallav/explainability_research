@@ -1,3 +1,5 @@
 .venv/
 __pycache__/
 *.pyc
+paper/figures/
+paper/exported_*.json

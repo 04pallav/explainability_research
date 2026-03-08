@@ -1,8 +1,9 @@
-certifi>=2020.0.0
-numpy>=1.19.0,<2
-pandas>=1.1.0,<2
-scikit-learn>=0.24.0
-shap>=0.41.0
-scipy>=1.5.0
-xgboost>=1.5.0
-matplotlib>=3.3.0
+# Pinned from local .venv (pip freeze) so CI matches local.
+certifi==2026.2.25
+numpy==1.21.6
+pandas==1.1.5
+scikit-learn==1.0.2
+scipy==1.7.3
+shap==0.42.1
+xgboost==1.6.2
+matplotlib==3.5.3
